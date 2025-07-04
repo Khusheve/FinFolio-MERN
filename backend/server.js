@@ -13,6 +13,9 @@ app.use(express.json());
 const stockRoutes = require('./routes/stocks');
 app.use('/api/stocks', stockRoutes);
 
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
+
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
