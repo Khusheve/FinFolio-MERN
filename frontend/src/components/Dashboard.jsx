@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import PortfolioHoldings from "./PortfolioHoldings";
+
 import {
   ChartBarIcon,
   CurrencyDollarIcon,
@@ -9,11 +11,12 @@ import {
   ArrowRightOnRectangleIcon,
   ChevronDoubleLeftIcon,
   ChevronDoubleRightIcon,
+  CurrencyRupeeIcon,
 } from "@heroicons/react/24/outline";
 import ThemeToggle from "./ThemeToggle";
 import StockSearch from "./StockSearch"; // Your StockSearch component
 // You can create Portfolio, Alerts, Watchlist, Profile components similarly
-
+import PortfolioReturns from "./PortfolioReturns";
 const Sparkline = () => (
   <svg width="120" height="32" viewBox="0 0 120 32" fill="none">
     <polyline
@@ -62,9 +65,11 @@ export default function Dashboard() {
   const navLinks = [
     { key: "dashboard", label: "Dashboard", icon: ChartBarIcon },
     { key: "portfolio", label: "Portfolio", icon: CurrencyDollarIcon },
+    { key: "profit-loss-roi", label: "Portfolio Returns", icon: CurrencyRupeeIcon },
     { key: "stocksearch", label: "Stock Search", icon: MagnifyingGlassIcon },
     { key: "alerts", label: "Alerts", icon: BellAlertIcon },
     { key: "watchlist", label: "Watchlist", icon: StarIcon },
+    
     { key: "profile", label: "Profile", icon: UserIcon },
   ];
 
@@ -75,7 +80,8 @@ export default function Dashboard() {
   };
 
   // Dummy components for other sections
-  const Portfolio = () => <div className="text-center text-xl py-20">Portfolio Feature Coming Soon</div>;
+  const Portfolio = () => <PortfolioHoldings userId={user._id} />;
+  const PortFolioReturns = () => <PortfolioReturns userId={user._id} />;
   const Alerts = () => <div className="text-center text-xl py-20">Alerts Feature Coming Soon</div>;
   const Watchlist = () => <div className="text-center text-xl py-20">Watchlist Feature Coming Soon</div>;
   const Profile = () => <div className="text-center text-xl py-20">Profile Feature Coming Soon</div>;
@@ -155,6 +161,9 @@ export default function Dashboard() {
         return <StockSearch />;
       case "portfolio":
         return <Portfolio />;
+      case "profit-loss-roi":
+        return <PortfolioReturns/>;
+
       case "alerts":
         return <Alerts />;
       case "watchlist":

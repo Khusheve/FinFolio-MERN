@@ -4,12 +4,13 @@ import HomePage from "./components/HomePage";
 import StockSearch from "./components/StockSearch";
 import Dashboard from "./components/Dashboard";
 import ErrorBoundary from "./components/ErrorBoundary";
-
+import PortfolioReturns from "./components/PortfolioReturns";
 const App = () => {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
+       <Route path="/portfolio" element={<PortfolioReturns />} />
         <Route path="/stock-search" 
                element={
                 <ErrorBoundary>
