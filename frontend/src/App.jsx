@@ -10,7 +10,7 @@ const App = () => {
     <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
-       <Route path="/portfolio" element={<PortfolioReturns />} />
+      
         <Route path="/stock-search" 
                element={
                 <ErrorBoundary>
@@ -22,7 +22,7 @@ const App = () => {
                 <ErrorBoundary>
                  <Dashboard />
                 </ErrorBoundary>
-              } />     
+              } />      
       </Routes>
     </Router>
   );
