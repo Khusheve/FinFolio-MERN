@@ -16,6 +16,9 @@ app.use('/api/stocks', stockRoutes);
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
+const watchlistRoutes = require('./routes/watchlist');
+app.use('/api/watchlist', watchlistRoutes);
+
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('MongoDB connected'))
