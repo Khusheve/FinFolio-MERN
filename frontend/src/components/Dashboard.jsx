@@ -12,6 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import ThemeToggle from "./ThemeToggle";
 import StockSearch from "./StockSearch"; 
+import Watchlist from "./Watchlist";
 // You can create Portfolio, Alerts, Watchlist, Profile components similarly
 
 const Sparkline = () => (
@@ -77,7 +78,7 @@ export default function Dashboard() {
   // Dummy components for other sections
   const Portfolio = () => <div className="text-center text-xl py-20">Portfolio Feature Coming Soon</div>;
   const Alerts = () => <div className="text-center text-xl py-20">Alerts Feature Coming Soon</div>;
-  const Watchlist = () => <div className="text-center text-xl py-20">Watchlist Feature Coming Soon</div>;
+  // const Watchlist = () => <div className="text-center text-xl py-20">Watchlist Feature Coming Soon</div>;
   const Profile = () => <div className="text-center text-xl py-20">Profile Feature Coming Soon</div>;
 
   // Main content renderer
