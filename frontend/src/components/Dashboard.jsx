@@ -11,7 +11,7 @@ import {
   ChevronDoubleRightIcon,
 } from "@heroicons/react/24/outline";
 import ThemeToggle from "./ThemeToggle";
-import StockSearch from "./StockSearch"; // Your StockSearch component
+import StockSearch from "./StockSearch"; 
 // You can create Portfolio, Alerts, Watchlist, Profile components similarly
 
 const Sparkline = () => (

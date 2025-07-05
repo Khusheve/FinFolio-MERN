@@ -10,18 +10,18 @@ const App = () => {
     <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/stock-search" 
+        {/* <Route path="/stock-search" 
                element={
                 <ErrorBoundary>
                  <StockSearch />
                 </ErrorBoundary>
-              } />
+              } />*/}
         <Route path="/dashboard"
                 element={
                 <ErrorBoundary>
                  <Dashboard />
                 </ErrorBoundary>
-              } />     
+              } />      
       </Routes>
     </Router>
   );
