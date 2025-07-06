@@ -121,6 +121,7 @@ function HomePage() {
       if (res.ok) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(data.user));
+        localStorage.setItem("userId", data.user._id);
         setModalOpen(false);
         window.location.href = "/dashboard"; // Change if you use React Router
       } else {

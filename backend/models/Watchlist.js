@@ -9,7 +9,8 @@ const stockSchema = new mongoose.Schema({
 
 const watchlistSchema = new mongoose.Schema({
   userId: {
-    type: String, 
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     required: true
   },
   stocks: [stockSchema]

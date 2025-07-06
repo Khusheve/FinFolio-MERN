@@ -1,14 +1,15 @@
-
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const Watchlist = require('../models/Watchlist');
+const auth = require('../middleware/authMiddleware');
+
 require('dotenv').config();
 
-// Add stock to watchlist
-router.post('/:userId/add', async (req, res) => {
+// POST /api/watchlist/add
+router.post('/add', auth, async (req, res) => {
   const { symbol } = req.body;
-  const userId = req.params.userId;
+  const userId = req.user.userId;
 
   try {
     const apiKey = process.env.ALPHA_VANTAGE_API_KEY;
@@ -21,55 +22,57 @@ router.post('/:userId/add', async (req, res) => {
 
     const stockData = {
       symbol: data.Symbol,
-      name: data.Name || symbol,
-      sector: data.Sector || 'Unknown',
+      name: data.Name,
+      sector: data.Sector,
       addedDate: new Date()
     };
 
     let watchlist = await Watchlist.findOne({ userId });
-    if (!watchlist) {
-      watchlist = new Watchlist({ userId, stocks: [] });
-    }
+    if (!watchlist) watchlist = new Watchlist({ userId, stocks: [] });
 
-    const alreadyExists = watchlist.stocks.some(item => item.symbol === stockData.symbol);
-    if (alreadyExists) return res.status(409).json({ error: 'Stock already in watchlist' });
+    const alreadyExists = watchlist.stocks.some(stock => stock.symbol === symbol);
+    if (alreadyExists) return res.status(409).json({ error: 'Already in watchlist' });
 
     watchlist.stocks.push(stockData);
     await watchlist.save();
 
     res.status(200).json(watchlist);
   } catch (err) {
-    console.error(err.message);
+    console.error(err);
     res.status(500).json({ error: 'Something went wrong' });
   }
 });
 
-// Get watchlist
-router.get('/:userId', async (req, res) => {
+// GET /api/watchlist
+router.get('/', auth, async (req, res) => {
+  const userId = req.user.userId;
+
   try {
-    const watchlist = await Watchlist.findOne({ userId: req.params.userId });
-    if (!watchlist) return res.status(404).json({ error: 'Watchlist not found' });
+    const watchlist = await Watchlist.findOne({ userId });
+    if (!watchlist) return res.json({ stocks: [] });
+
     res.json(watchlist);
   } catch (err) {
-    console.error(err.message);
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Delete stock from watchlist
-router.delete('/:userId/remove/:symbol', async (req, res) => {
-  const { userId, symbol } = req.params;
+// DELETE /api/watchlist/:symbol
+router.delete('/:symbol', auth, async (req, res) => {
+  const userId = req.user.userId;
+  const { symbol } = req.params;
 
   try {
     const watchlist = await Watchlist.findOne({ userId });
     if (!watchlist) return res.status(404).json({ error: 'Watchlist not found' });
 
-    watchlist.stocks = watchlist.stocks.filter(stock => stock.symbol !== symbol);
+    watchlist.stocks = watchlist.stocks.filter(s => s.symbol !== symbol);
     await watchlist.save();
 
-    res.status(200).json(watchlist);
+    res.json(watchlist);
   } catch (err) {
-    console.error(err.message);
+    console.error(err);
     res.status(500).json({ error: 'Server error' });
   }
 });
