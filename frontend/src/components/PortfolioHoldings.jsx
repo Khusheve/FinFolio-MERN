@@ -1,149 +1,189 @@
 import React, { useEffect, useState } from "react";
+import holdingsData from "./holdings.json"; // Adjust path as needed
 import axios from "axios";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend
+} from "recharts";
 
-const PortfolioHoldings = ({ userId }) => {
-  const [holdings, setHoldings] = useState([]);
-  const [form, setForm] = useState({ symbol: '', quantity: '', purchasePrice: '' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+// Replace with your actual Alpha Vantage API key
+const ALPHA_VANTAGE_API_KEY = "yZMMXFRUCEV6AKB0S";
 
-  // Helper to fetch holdings safely
-  const fetchHoldings = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await axios.get(`/api/portfolio/${userId}/holdings`);
-      setHoldings(Array.isArray(res.data.holdings) ? res.data.holdings : []);
-    } catch (err) {
-      setError('Failed to fetch holdings', err);
-      setHoldings([]);
-    }
-    setLoading(false);
-  };
 
+import { useNavigate } from "react-router-dom";
+
+const PortfolioHoldings = () => {
+  const [holdings, setHoldings] = useState(holdingsData);
+  const [prices, setPrices] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+
+  // Fetch current prices for all holdings
   useEffect(() => {
-    fetchHoldings();
+    const fetchPrices = async () => {
+      setLoading(true);
+      setError("");
+      const newPrices = {};
+      for (const h of holdings) {
+        try {
+          const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${h.symbol}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+          const response = await axios.get(url);
+          const data = response.data["Global Quote"];
+          if (data && data["05. price"]) {
+            newPrices[h.symbol] = Number(data["05. price"]);
+          } else {
+            newPrices[h.symbol] = null;
+          }
+        } catch {
+          newPrices[h.symbol] = null;
+        }
+      }
+      setPrices(newPrices);
+      setLoading(false);
+    };
+    fetchPrices();
     // eslint-disable-next-line
-  }, [userId]);
+  }, [holdings]);
 
-  const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value });
+  // Calculate total investment
+  const totalInvestment = holdings.reduce(
+    (sum, h) => sum + h.purchasePrice * h.quantity,
+    0
+  );
 
-  const handleSubmit = async e => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      await axios.post(`/api/portfolio/${userId}/holdings`, {
-        symbol: form.symbol.toUpperCase(),
-        quantity: Number(form.quantity),
-        purchasePrice: Number(form.purchasePrice)
-      });
-      await fetchHoldings();
-      setForm({ symbol: '', quantity: '', purchasePrice: '' });
-    } catch (err) {
-      setError('Failed to add/update holding', err);
-    }
-    setLoading(false);
+  // Sell handler
+  const handleSell = (symbol) => {
+    setHoldings(holdings.filter((h) => h.symbol !== symbol));
   };
 
-  const handleDelete = async (symbol) => {
-    setLoading(true);
-    setError('');
-    try {
-      await axios.delete(`/api/portfolio/${userId}/holdings/${symbol}`);
-      setHoldings(prev => prev.filter(h => h.symbol !== symbol));
-    } catch (err) {
-      setError('Failed to delete holding', err);
-    }
-    setLoading(false);
-  };
+  // Prepare data for the line chart
+  const chartData = holdings.map(h => {
+    const invested = h.purchasePrice * h.quantity;
+    const currentPrice = prices[h.symbol];
+    const currentValue = currentPrice ? currentPrice * h.quantity : 0;
+    const profitLoss = currentPrice ? currentValue - invested : 0;
+    return {
+      name: h.symbol,
+      profitLoss: Number(profitLoss.toFixed(2))
+    };
+  });
 
   return (
-    <div className="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto mt-8 scale-125 origin-top">
-      <h2 className="text-2xl font-bold text-green-700 mb-4">Your Holdings</h2>
-
-      {error && <div className="mb-4 text-red-600">{error}</div>}
-
-     <form onSubmit={handleSubmit} className="flex flex-col gap-2 mb-6 ">
-  <div className="flex flex-col md:flex-row gap-2">
-    <input
-      type="text"
-      name="symbol"
-      value={form.symbol}
-      onChange={handleChange}
-      placeholder="Symbol (e.g., TCS)"
-      className="border rounded px-3 py-2 flex-1"
-      required
-    />
-    <input
-      type="number"
-      name="quantity"
-      value={form.quantity}
-      onChange={handleChange}
-      placeholder="Quantity"
-      className="border rounded px-3 py-2 flex-1"
-      required
-      min="1"
-    />
-    <input
-      type="number"
-      name="purchasePrice"
-      value={form.purchasePrice}
-      onChange={handleChange}
-      placeholder="Purchase Price"
-      className="border rounded px-1 py-2 flex-1"
-      required
-      min="0"
-      step="0.01"
-    />
-  </div>
-  <button
-    type="submit"
-    className="bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-2 rounded mt-2 w-full md:w-auto"
-    disabled={loading}
-  >
-    {loading ? "Saving..." : "Add / Update"}
-  </button>
-</form>
-
-
-      <table className="min-w-full bg-white border">
-        <thead>
-          <tr className="bg-green-50">
-            <th className="py-2 px-4 border-b text-left">Symbol</th>
-            <th className="py-2 px-4 border-b text-left">Quantity</th>
-            <th className="py-2 px-4 border-b text-left">Purchase Price</th>
-            <th className="py-2 px-4 border-b"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {(Array.isArray(holdings) ? holdings : []).length === 0 && !loading && (
-            <tr>
-              <td colSpan="4" className="text-center py-4 text-gray-500">No holdings yet.</td>
+    <div className="flex flex-col md:flex-row w-full max-w-7xl mx-auto px-2">
+      {/* Holdings box on the left */}
+      <div className="w-full md:w-3/4 bg-white rounded-lg shadow p-8 mt-8 md:mr-8 relative min-h-[500px] flex flex-col">
+        {/* Total Investment on top right */}
+        <div className="absolute right-8 top-8 text-xl font-bold text-green-700">
+          Total Investment: ₹{totalInvestment.toFixed(2)}
+        </div>
+        <h2 className="text-3xl font-bold text-green-700 mb-6">Your Holdings</h2>
+        <table className="min-w-full bg-white border mb-4">
+          <thead>
+            <tr className="bg-green-50">
+              <th className="py-2 px-4 border-b text-left">Symbol</th>
+              <th className="py-2 px-4 border-b text-left">Quantity</th>
+              <th className="py-2 px-4 border-b text-left">Purchase Price</th>
+              <th className="py-2 px-4 border-b text-left">Current Price</th>
+              <th className="py-2 px-4 border-b text-left">Invested</th>
+              <th className="py-2 px-4 border-b text-left">Current Value</th>
+              <th className="py-2 px-4 border-b text-left">P/L</th>
+              <th className="py-2 px-4 border-b text-left">ROI (%)</th>
+              <th className="py-2 px-4 border-b text-left"></th>
             </tr>
-          )}
-          {(Array.isArray(holdings) ? holdings : []).map(h => (
-            <tr key={h.symbol}>
-              <td className="py-2 px-4 border-b">{h.symbol}</td>
-              <td className="py-2 px-4 border-b">{h.quantity}</td>
-              <td className="py-2 px-4 border-b">₹{Number(h.purchasePrice).toFixed(2)}</td>
-              <td className="py-2 px-4 border-b">
-                <button
-                  onClick={() => handleDelete(h.symbol)}
-                  className="text-red-600 hover:text-red-800 font-semibold"
-                  disabled={loading}
-                >
-                  Delete
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {loading && <div className="mt-4 text-gray-500">Loading...</div>}
+          </thead>
+          <tbody>
+            {holdings.length === 0 && (
+              <tr>
+                <td colSpan="9" className="text-center py-4 text-gray-500">
+                  No holdings to display.
+                </td>
+              </tr>
+            )}
+            {holdings.map((h) => {
+              const invested = h.purchasePrice * h.quantity;
+              const currentPrice = prices[h.symbol];
+              const currentValue = currentPrice ? currentPrice * h.quantity : 0;
+              const profitLoss = currentPrice ? currentValue - invested : 0;
+              const roi = invested ? (profitLoss / invested) * 100 : 0;
+              return (
+                <tr key={h.symbol}>
+                  <td className="py-2 px-4 border-b">{h.symbol}</td>
+                  <td className="py-2 px-4 border-b">{h.quantity}</td>
+                  <td className="py-2 px-4 border-b">₹{h.purchasePrice}</td>
+                  <td className="py-2 px-4 border-b">
+                    {loading
+                      ? "Loading..."
+                      : currentPrice
+                      ? `₹${currentPrice.toFixed(2)}`
+                      : "N/A"}
+                  </td>
+                  <td className="py-2 px-4 border-b">₹{invested.toFixed(2)}</td>
+                  <td className="py-2 px-4 border-b">
+                    {currentPrice ? `₹${currentValue.toFixed(2)}` : "--"}
+                  </td>
+                  <td
+                    className={`py-2 px-4 border-b ${
+                      profitLoss >= 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {currentPrice ? `₹${profitLoss.toFixed(2)}` : "--"}
+                  </td>
+                  <td
+                    className={`py-2 px-4 border-b ${
+                      roi >= 0 ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {currentPrice ? `${roi.toFixed(2)}%` : "--"}
+                  </td>
+                  <td className="py-2 px-4 border-b">
+                    <button
+                      onClick={() => handleSell(h.symbol)}
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2 rounded"
+                    >
+                      Sell
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {/* Add Holding Button at the bottom */}
+        <button
+          onClick={() => navigate("/stock-search")}
+          className="mt-6 w-full bg-green-600 hover:bg-green-700 text-white font-bold px-4 py-3 rounded text-lg transition"
+        >
+          + Add Holding
+        </button>
+        {error && (
+          <div className="mt-4 text-red-600 font-semibold">{error}</div>
+        )}
+      </div>
+      {/* Right side: Profit/Loss Line Chart */}
+      <div className="w-full md:w-1/4 flex flex-col items-center justify-center mt-8">
+        <h3 className="text-xl font-bold mb-4 text-green-700">Profit/Loss per Stock</h3>
+        <div className="w-full h-96 bg-white rounded-lg shadow flex items-center justify-center p-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="profitLoss" stroke="#16a34a" strokeWidth={3} dot />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 };
 
 export default PortfolioHoldings;
-
