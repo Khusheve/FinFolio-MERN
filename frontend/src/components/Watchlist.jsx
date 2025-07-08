@@ -1,5 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, TrendingUp, TrendingDown, X, Bell, Star } from 'lucide-react';
+
+const STOCK_API_KEY = import.meta.env.VITE_STOCK_API_KEY;
+const STOCK_API_URL = 'https://www.alphavantage.co/query';
+
+const isDemoKey = !STOCK_API_KEY || STOCK_API_KEY === "demo";
 
 const Watchlist = () => {
   const [watchlist, setWatchlist] = useState([]);
@@ -7,41 +12,125 @@ const Watchlist = () => {
   const [newStock, setNewStock] = useState({ symbol: '', name: '' });
   const [filter, setFilter] = useState('all');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const intervalRef = useRef(null);
+  const [showAlerts, setShowAlerts] = useState(false);
 
-  // Sample stock data -  this would come from your backend API
-  const stockDatabase = {
-    'AAPL': { name: 'Apple Inc.', sector: 'Technology' },
-    'GOOGL': { name: 'Alphabet Inc.', sector: 'Technology' },
-    'MSFT': { name: 'Microsoft Corporation', sector: 'Technology' },
-    'TSLA': { name: 'Tesla Inc.', sector: 'Automotive' },
-    'AMZN': { name: 'Amazon.com Inc.', sector: 'E-commerce' },
-    'NVDA': { name: 'NVIDIA Corporation', sector: 'Technology' },
-    'META': { name: 'Meta Platforms Inc.', sector: 'Technology' },
-    'NFLX': { name: 'Netflix Inc.', sector: 'Entertainment' }
-  };
+  const token = localStorage.getItem('token');
+  if (!token) {
+    return <div className="text-red-500">Please log in to view your watchlist</div>;
+  }
 
-  // Simulate real-time stock data
-  const generateStockData = (symbol) => {
-    const basePrice = Math.random() * 300 + 50;
-    const change = (Math.random() - 0.5) * 20;
-    const changePercent = (change / basePrice) * 100;
-
-    return {
-      symbol,
-      name: stockDatabase[symbol]?.name || 'Unknown Company',
-      sector: stockDatabase[symbol]?.sector || 'Various',
-      price: basePrice,
-      change,
-      changePercent,
-      volume: (Math.random() * 100).toFixed(1) + 'M',
-      marketCap: (Math.random() * 2000).toFixed(0) + 'B',
-      high52: basePrice * 1.3,
-      low52: basePrice * 0.7,
-      addedDate: new Date().toLocaleDateString()
+  // Fetch watchlist from backend
+  useEffect(() => {
+    const fetchWatchlist = async () => {
+      try {
+        setLoading(true);
+        const res = await fetch(`http://localhost:5000/api/watchlist`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json();
+        if (data.stocks && Array.isArray(data.stocks)) {
+          setWatchlist(data.stocks);
+        } else {
+          setWatchlist([]);
+        }
+      } catch (err) {
+        console.error('Error fetching watchlist:', err);
+        setError('Failed to load watchlist');
+      } finally {
+        setLoading(false);
+      }
     };
+
+    fetchWatchlist();
+  }, []);
+
+  const fetchPrices = async () => {
+    if (watchlist.length === 0) return;
+
+    try {
+      const updatedStocks = await Promise.all(
+        watchlist.map(async (stock) => {
+          try {
+            const url = `${STOCK_API_URL}?function=GLOBAL_QUOTE&symbol=${stock.symbol}&apikey=${STOCK_API_KEY}`;
+            const res = await fetch(url);
+            const data = await res.json();
+
+            const quote = data['Global Quote'];
+            if (quote && Object.keys(quote).length > 0) {
+              const price = parseFloat(quote['05. price']);
+              const change = parseFloat(quote['09. change']);
+              const changePercent = parseFloat(quote['10. change percent']?.replace('%', ''));
+
+              return {
+                ...stock,
+                price: isNaN(price) ? 0 : price,
+                change: isNaN(change) ? 0 : change,
+                changePercent: isNaN(changePercent) ? 0 : changePercent,
+                lastUpdated: new Date().toISOString(),
+              };
+            } else {
+              return { ...stock, error: 'No quote data available' };
+            }
+          } catch (err) {
+            return { ...stock, error: 'Failed to fetch price' };
+          }
+        })
+      );
+
+      setWatchlist(updatedStocks);
+    } catch (err) {
+      console.error('Error in fetchPrices:', err);
+      setError('Failed to update prices');
+    }
   };
 
-  // Add stock to watchlist
+  useEffect(() => {
+    if (watchlist.length === 0) return;
+    fetchPrices();
+    intervalRef.current = setInterval(fetchPrices, 30000);
+    return () => clearInterval(intervalRef.current);
+  }, [watchlist.length]);
+
+  const validateStockSymbol = async (symbol) => {
+    try {
+      const url = `${STOCK_API_URL}?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${STOCK_API_KEY}`;
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data['Note']) {
+        return { valid: false, error: 'API rate limit exceeded. Try again later.' };
+      }
+
+      if (data['Global Quote'] && Object.keys(data['Global Quote']).length > 0) {
+        const quote = data['Global Quote'];
+        return {
+          valid: true,
+          data: {
+            symbol: quote['01. symbol'] || symbol.toUpperCase(),
+            name: quote['01. symbol'] || symbol.toUpperCase(),
+            price: parseFloat(quote['05. price']) || 0,
+            change: parseFloat(quote['09. change']) || 0,
+            changePercent: parseFloat(quote['10. change percent']?.replace('%', '')) || 0,
+          },
+        };
+      } else if (data['Error Message']) {
+        return { valid: false, error: 'Invalid stock symbol' };
+      } else if (data['Information']) {
+        return { valid: false, error: data['Information'] };
+      } else {
+        return { valid: false, error: 'Invalid stock symbol or no data' };
+      }
+    } catch (err) {
+      console.error('Error validating stock symbol:', err);
+      return { valid: false, error: 'Failed to validate symbol' };
+    }
+  };
+
   const addToWatchlist = async () => {
     if (!newStock.symbol.trim()) {
       alert('Please enter a stock symbol');
@@ -49,299 +138,231 @@ const Watchlist = () => {
     }
 
     const symbol = newStock.symbol.toUpperCase();
-
-    // Check if already exists
-    if (watchlist.find(stock => stock.symbol === symbol)) {
+    if (watchlist.some((stock) => stock.symbol === symbol)) {
       alert('Stock already in watchlist');
       return;
     }
 
-    // In real app, make API call to backend
-    // const response = await fetch('/api/watchlist', { method: 'POST', ... });
+    setLoading(true);
+    try {
+      const validation = await validateStockSymbol(symbol);
+      if (!validation.valid) {
+        alert(validation.error);
+        return;
+      }
 
-    const stockData = generateStockData(symbol);
-    if (newStock.name.trim()) {
-      stockData.name = newStock.name;
+      const res = await fetch(`http://localhost:5000/api/watchlist/add`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          symbol,
+          name: newStock.name || validation.data.name,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.stocks && Array.isArray(data.stocks)) {
+        setWatchlist(data.stocks);
+      } else {
+        const newStockEntry = {
+          ...validation.data,
+          addedDate: new Date().toISOString(),
+        };
+        setWatchlist((prev) => [...prev, newStockEntry]);
+      }
+
+      setNewStock({ symbol: '', name: '' });
+      setShowAddForm(false);
+    } catch (err) {
+      alert('Failed to add stock');
+    } finally {
+      setLoading(false);
     }
-
-    setWatchlist(prev => [...prev, stockData]);
-    setNewStock({ symbol: '', name: '' });
-    setShowAddForm(false);
   };
 
-  // Remove stock from watchlist
   const removeFromWatchlist = async (symbol) => {
-    if (window.confirm(`Remove ${symbol} from watchlist?`)) {
-      // In real app, make API call to backend
-      // await fetch(`/api/watchlist/${symbol}`, { method: 'DELETE' });
+    if (!window.confirm(`Remove ${symbol} from watchlist?`)) return;
 
-      setWatchlist(prev => prev.filter(stock => stock.symbol !== symbol));
+    try {
+      const res = await fetch(`http://localhost:5000/api/watchlist/${symbol}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (data.stocks && Array.isArray(data.stocks)) {
+        setWatchlist(data.stocks);
+      } else {
+        setWatchlist((prev) => prev.filter((stock) => stock.symbol !== symbol));
+      }
+    } catch {
+      alert('Failed to remove stock');
     }
   };
 
-  // Filter stocks based on current filter
   const getFilteredStocks = () => {
     let filtered = watchlist;
-
-    // Apply performance filter
-    switch (filter) {
-      case 'gainers':
-        filtered = filtered.filter(stock => stock.change > 0);
-        break;
-      case 'losers':
-        filtered = filtered.filter(stock => stock.change < 0);
-        break;
-      default:
-        break;
+    if (filter === 'gainers') {
+      filtered = filtered.filter((stock) => (stock.change || 0) > 0);
+    } else if (filter === 'losers') {
+      filtered = filtered.filter((stock) => (stock.change || 0) < 0);
     }
 
-    // Apply search filter
     if (searchTerm) {
-      filtered = filtered.filter(stock =>
-        stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        stock.name.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(
+        (stock) =>
+          stock.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (stock.name && stock.name.toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
 
     return filtered;
   };
 
-  // Simulate periodic price updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setWatchlist(prev => prev.map(stock => ({
-        ...stock,
-        ...generateStockData(stock.symbol),
-        name: stock.name, // Keep original name
-        addedDate: stock.addedDate // Keep original date
-      })));
-    }, 5000); // Update every 5 seconds
-
-    return () => clearInterval(interval);
-  }, []);
-
   const filteredStocks = getFilteredStocks();
 
   return (
-    <div className="min-h-screen" style={{ 
-      background: 'linear-gradient(135deg, #1a2332 0%, #2c3e50 100%)' 
-    }}>
-      {/* Header */}
-      <div className="bg-gray-900 bg-opacity-95 backdrop-blur-sm border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <h1 className="text-2xl font-bold text-white">FinFolio</h1>
-              <span className="text-gray-400">|</span>
-              <h2 className="text-xl text-yellow-400 font-semibold">Watchlist & Alerts</h2>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Bell className="w-6 h-6 text-gray-400 hover:text-yellow-400 cursor-pointer transition-colors" />
-              <Star className="w-6 h-6 text-gray-400 hover:text-yellow-400 cursor-pointer transition-colors" />
-            </div>
-          </div>
+<div className="min-h-screen bg-white text-black dark:bg-gray-900 dark:text-white p-6 transition-colors duration-300">
+
+      {isDemoKey && (
+        <div className="bg-yellow-600 text-white p-2 rounded mb-4">
+          Warning: Using Alpha Vantage demo API key. Price updates may not work or may be rate-limited.
         </div>
-      </div>
+      )}
+      <header className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-green-700 dark:text-green-400">FinFolio</h1>
+          <p className="text-gray-500 dark:text-gray-400">Watchlist & Real-time Updates</p>
+        </div>
+        <div className="flex space-x-3">
+          <div className="relative">
+  <button onClick={() => setShowAlerts(prev => !prev)} className="focus:outline-none">
+    <Bell className="cursor-pointer" />
+  </button>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Controls Section */}
-        <div className="bg-gray-800 bg-opacity-50 backdrop-blur-sm rounded-xl p-6 mb-8 border border-gray-700">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            {/* Search Bar */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search stocks..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:border-transparent transition-all"
-              />
-            </div>
+  {showAlerts && (
+    <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 text-black dark:text-white shadow-lg rounded-lg p-4 z-50">
+      <h4 className="font-bold mb-2">Notifications</h4>
+      {watchlist.length === 0 ? (
+        <p className="text-sm text-gray-500">No alerts yet</p>
+      ) : (
+        <ul className="text-sm space-y-2 max-h-60 overflow-y-auto">
+          {watchlist.map((stock, i) => {
+            if (typeof stock.changePercent !== 'number') return null;
+            return (
+              <li key={i}>
+                <span className="font-semibold">{stock.symbol}</span> is{' '}
+                {stock.changePercent >= 0 ? (
+                  <span className="text-green-500">up</span>
+                ) : (
+                  <span className="text-red-500">down</span>
+                )}{' '}
+                {Math.abs(stock.changePercent).toFixed(2)}%
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  )}
+</div>
 
-            {/* Filter Buttons */}
-            <div className="flex space-x-2">
-              {['all', 'gainers', 'losers'].map((filterType) => (
-                <button
-                  key={filterType}
-                  onClick={() => setFilter(filterType)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                    filter === filterType
-                      ? 'bg-yellow-400 text-gray-900'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  {filterType.charAt(0).toUpperCase() + filterType.slice(1)}
-                </button>
-              ))}
-            </div>
+          
+        </div>
+      </header>
 
-            {/* Add Stock Button */}
+      <div className="flex flex-col md:flex-row items-center justify-between mb-4 space-y-4 md:space-y-0">
+        <div className="relative w-full md:max-w-md">
+          <Search className="absolute left-3 top-3 text-gray-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search stocks..."
+            className="w-full pl-10 pr-4 py-2 rounded bg-gray-100 text-black placeholder-gray-500 dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
+          />
+        </div>
+        <div className="flex space-x-2">
+          {['all', 'gainers', 'losers'].map((type) => (
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="flex items-center space-x-2 bg-yellow-400 hover:bg-yellow-500 text-gray-900 font-medium px-6 py-3 rounded-lg transition-all transform hover:scale-105"
+              key={type}
+              onClick={() => setFilter(type)}
+              className={`px-4 py-2 rounded ${
+                filter === type
+                  ? 'bg-yellow-400 text-black'
+                  : 'bg-gray-100 text-black dark:bg-gray-700 dark:text-white'
+              }`}
             >
-              <Plus className="w-5 h-5" />
-              <span>Add Stock</span>
+              {type}
             </button>
-          </div>
-
-          {/* Add Stock Form */}
-          {showAddForm && (
-            <div className="mt-6 p-4 bg-gray-700 rounded-lg border border-gray-600">
-              <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
-                <input
-                  type="text"
-                  placeholder="Stock Symbol (e.g., AAPL)"
-                  value={newStock.symbol}
-                  onChange={(e) => setNewStock(prev => ({ ...prev, symbol: e.target.value.toUpperCase() }))}
-                  className="flex-1 px-4 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                />
-                <input
-                  type="text"
-                  placeholder="Company Name (optional)"
-                  value={newStock.name}
-                  onChange={(e) => setNewStock(prev => ({ ...prev, name: e.target.value }))}
-                  className="flex-1 px-4 py-2 bg-gray-600 border border-gray-500 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                />
-                <div className="flex space-x-2">
-                  <button
-                    onClick={addToWatchlist}
-                    className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors"
-                  >
-                    Add
-                  </button>
-                  <button
-                    onClick={() => setShowAddForm(false)}
-                    className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          ))}
         </div>
-
-        {/* Watchlist Grid */}
-        {filteredStocks.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="text-6xl mb-4">📊</div>
-            <h3 className="text-2xl font-bold text-gray-300 mb-2">
-              {watchlist.length === 0 ? 'Your watchlist is empty' : 'No stocks match your filters'}
-            </h3>
-            <p className="text-gray-400">
-              {watchlist.length === 0 
-                ? 'Add some stocks to start tracking their performance!' 
-                : 'Try adjusting your search or filter criteria.'
-              }
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filteredStocks.map((stock) => (
-              <div
-                key={stock.symbol}
-                className="bg-gray-800 bg-opacity-50 backdrop-blur-sm rounded-xl p-6 border border-gray-700 hover:border-yellow-400 transition-all duration-300 transform hover:scale-105 hover:shadow-2xl relative group"
-              >
-                {/* Remove Button */}
-                <button
-                  onClick={() => removeFromWatchlist(stock.symbol)}
-                  className="absolute top-4 right-4 w-8 h-8 bg-red-600 bg-opacity-0 group-hover:bg-opacity-100 rounded-full flex items-center justify-center transition-all duration-300 opacity-0 group-hover:opacity-100"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-
-                {/* Stock Header */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-bold text-white">{stock.symbol}</h3>
-                    <span className="text-sm text-gray-400">{stock.sector}</span>
-                  </div>
-                  <p className="text-gray-400 text-sm mt-1">{stock.name}</p>
-                </div>
-
-                {/* Price Info */}
-                <div className="mb-4">
-                  <div className="text-3xl font-bold text-white mb-2">
-                    ${stock.price.toFixed(2)}
-                  </div>
-                  <div className={`flex items-center space-x-2 ${
-                    stock.change >= 0 ? 'text-green-400' : 'text-red-400'
-                  }`}>
-                    {stock.change >= 0 ? (
-                      <TrendingUp className="w-4 h-4" />
-                    ) : (
-                      <TrendingDown className="w-4 h-4" />
-                    )}
-                    <span className="font-semibold">
-                      {stock.change >= 0 ? '+' : ''}${stock.change.toFixed(2)}
-                    </span>
-                    <span className="font-semibold">
-                      ({stock.changePercent >= 0 ? '+' : ''}{stock.changePercent.toFixed(2)}%)
-                    </span>
-                  </div>
-                </div>
-
-                {/* Stock Details */}
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Volume</span>
-                    <span className="text-white font-medium">{stock.volume}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Market Cap</span>
-                    <span className="text-white font-medium">${stock.marketCap}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">52W High</span>
-                    <span className="text-white font-medium">${stock.high52.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">52W Low</span>
-                    <span className="text-white font-medium">${stock.low52.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-gray-700 pt-2 mt-3">
-                    <span className="text-gray-400">Added</span>
-                    <span className="text-white font-medium">{stock.addedDate}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Summary Stats */}
-        {filteredStocks.length > 0 && (
-          <div className="mt-8 bg-gray-800 bg-opacity-50 backdrop-blur-sm rounded-xl p-6 border border-gray-700">
-            <h3 className="text-xl font-bold text-white mb-4">Portfolio Summary</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-400">{filteredStocks.length}</div>
-                <div className="text-gray-400">Total Stocks</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-400">
-                  {filteredStocks.filter(s => s.change > 0).length}
-                </div>
-                <div className="text-gray-400">Gainers</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-red-400">
-                  {filteredStocks.filter(s => s.change < 0).length}
-                </div>
-                <div className="text-gray-400">Losers</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-400">
-                  {filteredStocks.filter(s => Math.abs(s.change) < 1).length}
-                </div>
-                <div className="text-gray-400">Neutral</div>
-              </div>
-            </div>
-          </div>
-        )}
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="flex items-center space-x-1 bg-yellow-400 px-4 py-2 text-black rounded"
+        >
+          <Plus />
+          <span>Add</span>
+        </button>
       </div>
+
+      {showAddForm && (
+        <div className="mb-6 p-4 bg-gray-700 rounded">
+          <input
+            value={newStock.symbol}
+            onChange={(e) => setNewStock({ ...newStock, symbol: e.target.value })}
+            placeholder="Stock Symbol (e.g., AAPL)"
+            className="p-2 rounded mr-2 bg-gray-100 text-black dark:bg-gray-800 dark:text-white"
+          />
+          <input
+            value={newStock.name}
+            onChange={(e) => setNewStock({ ...newStock, name: e.target.value })}
+            placeholder="Company Name (optional)"
+            className="p-2 rounded mr-2 bg-gray-800 text-white"
+          />
+          <button onClick={addToWatchlist} className="bg-green-500 px-4 py-2 rounded text-white">
+            Add
+          </button>
+        </div>
+      )}
+
+      {error && <div className="text-red-500 mb-4">{error}</div>}
+
+      {filteredStocks.length === 0 ? (
+        <p>No stocks found.</p>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {filteredStocks.map((stock) => (
+            <div
+              key={stock.symbol}
+              className="p-4 rounded-lg shadow-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-white border border-gray-300 dark:border-gray-700 hover:border-yellow-400 transition duration-300 ease-in-out"
+            >
+              <button
+                onClick={() => removeFromWatchlist(stock.symbol)}
+                className="absolute top-2 right-2 text-red-500 hover:text-white"
+              >
+                <X />
+              </button>
+              <h3 className="text-xl font-bold">{stock.symbol}</h3>
+              <p className="text-gray-400">{stock.name}</p>
+              <p className="text-2xl mt-2">${stock.price?.toFixed(2) || '—'}</p>
+              <p className={`mt-1 ${stock.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                {stock.change >= 0 ? <TrendingUp /> : <TrendingDown />}
+                {`${stock.change?.toFixed(2) || 0} (${stock.changePercent?.toFixed(2) || 0}%)`}
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                Last updated:{' '}
+                {stock.lastUpdated && new Date(stock.lastUpdated).toLocaleTimeString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
