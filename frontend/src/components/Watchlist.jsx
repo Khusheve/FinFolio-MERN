@@ -340,7 +340,7 @@ const Watchlist = () => {
           {filteredStocks.map((stock) => (
             <div
               key={stock.symbol}
-              className="p-4 rounded-lg shadow-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-white border border-gray-300 dark:border-gray-700 hover:border-yellow-400 transition duration-300 ease-in-out"
+              className="relative p-4 rounded-lg shadow-sm bg-white text-gray-900 dark:bg-gray-800 dark:text-white border border-gray-300 dark:border-gray-700 hover:border-yellow-400 transition duration-300 ease-in-out"
             >
               <button
                 onClick={() => removeFromWatchlist(stock.symbol)}
